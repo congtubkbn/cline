@@ -1,0 +1,8 @@
+rg -g "*.{c,cpp,h,hpp}" "trace log"
+
+e.g rg -g "*.{c,cpp}" "EMERGENCY_CALL_SET mode type"
+
+Flag	Purpose	Example
+-i	Case-insensitive: Matches "Trace Log", "TRACE LOG", etc.	rg -i -g "*.{c,cpp,h,hpp}" "trace log"
+-w	Whole word: Prevents matching "trace logs" or "retrace log".	rg -w -g "*.{c,cpp,h,hpp}" "trace log"
+-C 2	Context: Shows 2 lines before and after each match.	rg -C 2 -g "*.{c,cpp,h,hpp}" "trace log"

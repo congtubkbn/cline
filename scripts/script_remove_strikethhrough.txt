@@ -1,0 +1,127 @@
+Option Explicit
+
+Dim fso As Object
+Dim totalProcessed As Integer
+Dim totalFailed As Integer
+Dim failedFiles As String
+Dim rootFolderPath As String
+Dim cleanedRootPath As String
+
+Sub StartBatchRemovalWithBackup()
+    Dim dlgFolder As FileDialog
+    
+    ' Initialize
+    totalProcessed = 0
+    totalFailed = 0
+    failedFiles = ""
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    
+    ' Select the Root Folder
+    Set dlgFolder = Application.FileDialog(msoFileDialogFolderPicker)
+    With dlgFolder
+        .Title = "Select the Folder to Process"
+        If .Show <> -1 Then Exit Sub
+        rootFolderPath = .SelectedItems(1)
+    End With
+    
+    ' Create the /cleaned folder at the root
+    cleanedRootPath = rootFolderPath & "\cleaned"
+    If Not fso.FolderExists(cleanedRootPath) Then
+        fso.CreateFolder (cleanedRootPath)
+    End If
+    
+    Application.ScreenUpdating = False
+    
+    ' Start processing
+    ProcessFolder rootFolderPath
+    
+    Application.ScreenUpdating = True
+    
+    ' Final Report
+    Dim reportMsg As String
+    reportMsg = "Process Complete!" & vbCrLf & _
+                "Files cleaned and saved to /cleaned: " & totalProcessed & vbCrLf & _
+                "Files failed: " & totalFailed
+                
+    If totalFailed > 0 Then
+        reportMsg = reportMsg & vbCrLf & vbCrLf & "Failed files:" & vbCrLf & failedFiles & _
+                    vbCrLf & "Would you like to try opening these failed files manually?"
+        MsgBox reportMsg, vbCritical, "Summary Report"
+    Else
+        MsgBox reportMsg, vbInformation, "Success"
+    End If
+End Sub
+
+Sub ProcessFolder(currentPath As String)
+    Dim objFolder As Object
+    Dim objSubFolder As Object
+    Dim objFile As Object
+    Dim doc As Document
+    Dim targetFilePath As String
+    Dim targetSubFolderPath As String
+    
+    ' Skip the /cleaned folder itself to avoid infinite loops
+    If currentPath = cleanedRootPath Then Exit Sub
+    
+    Set objFolder = fso.GetFolder(currentPath)
+    
+    ' 1. Process all Word files in current folder
+    For Each objFile In objFolder.Files
+        If (objFile.Name Like "*.doc*") And (Left(objFile.Name, 2) <> "~$") Then
+            ' Determine the new path in the /cleaned structure
+            targetFilePath = Replace(objFile.Path, rootFolderPath, cleanedRootPath)
+            
+            ' Ensure the subfolder exists in the /cleaned directory
+            targetSubFolderPath = fso.GetParentFolderName(targetFilePath)
+            EnsureFolderExists targetSubFolderPath
+            
+            On Error Resume Next
+            Set doc = Documents.Open(FileName:=objFile.Path, Visible:=False)
+            
+            If Err.Number <> 0 Then
+                totalFailed = totalFailed + 1
+                failedFiles = failedFiles & objFile.Name & " (Error opening)" & vbCrLf
+                Err.Clear
+            Else
+                ' Perform Strikethrough Removal
+                CleanDocument doc
+                
+                ' Save as a NEW file in the /cleaned folder
+                doc.SaveAs2 FileName:=targetFilePath
+                doc.Close
+                totalProcessed = totalProcessed + 1
+            End If
+            On Error GoTo 0
+        End If
+    Next objFile
+    
+    ' 2. Recursive call for Subfolders
+    For Each objSubFolder In objFolder.SubFolders
+        If objSubFolder.Path <> cleanedRootPath Then
+            ProcessFolder objSubFolder.Path
+        End If
+    Next objSubFolder
+End Sub
+
+Sub CleanDocument(doc As Document)
+    With doc.Content.Find
+        .ClearFormatting
+        .Replacement.ClearFormatting
+        .Font.Strikethrough = True
+        .Text = ""
+        .Replacement.Text = ""
+        .Forward = True
+        .Wrap = wdFindContinue
+        .Format = True
+        .Execute Replace:=wdReplaceAll
+    End With
+    ' Uncomment below if you also want to accept all track changes
+    ' doc.Revisions.AcceptAll
+End Sub
+
+Sub EnsureFolderExists(Path As String)
+    If Not fso.FolderExists(Path) Then
+        EnsureFolderExists fso.GetParentFolderName(Path)
+        fso.CreateFolder Path
+    End If
+End Sub
